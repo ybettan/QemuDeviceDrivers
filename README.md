@@ -1,7 +1,17 @@
 # QemuDeviceDrivers
 Here I will keep all the drivers written for all the Qemu devices I wrote
 
-## PCI driver building instructions
+## PCI driver
+
+#### Overview
+This is a simple PCI device driver that is given as an example of how drivers should be
+written.
+The device itself is located at https://github.com/ybettan/qemu/tree/pci/hw/pci/pci_muldev.c
+in the [pci] branch and its purpose is to simply multiply a given number.
+The device supports PORTIO, MMIO, IRQ and DMA and the driver can be accessed from
+userspace using sysfs.
+
+#### Building instructions
 1. check the running kernel version with
     - `uname -r`
 2. check that you have the kernel source code for this version
