@@ -7,7 +7,7 @@
 
 
 #define PCI_VENDOR_ID_REDHAT 0x1b36
-#define PCI_DEVICE_ID_REDHAT_MULDEV 0x0005
+#define PCI_DEVICE_ID_REDHAT_EXAMPLE 0x0005
 
 #define DMA_BUFFER_SIZE 4096
 
@@ -16,10 +16,10 @@
 static void __iomem *io, *mem, *irq, *dmaBase;
 
 /* kobject for sysfs use */
-static struct kobject *muldevKob;
+static struct kobject *exampleKob;
     
 /* implementation is at the buttom */
-static struct pci_driver muldev;
+static struct pci_driver example;
 
 /* for IRQ support - handler write the result here when IRQ fired */
 uint64_t ioData, memData;
@@ -33,9 +33,9 @@ dma_addr_t dmaBuffPhysicalAddr;
 //                  sysfs - give user access to driver
 //-----------------------------------------------------------------------------
 
-static ssize_t muldev_show(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
                               char *buf);
-static ssize_t muldev_store(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
                               const char *buf, size_t count);
 
 /* 
@@ -49,52 +49,52 @@ static ssize_t muldev_store(struct kobject *kobj, struct kobj_attribute *attr,
  *     .store= _store, \
  * } 
  */
-struct kobj_attribute muldev_attr_io = 
-    __ATTR(io_buff, 0664, muldev_show, muldev_store);
+struct kobj_attribute example_attr_io =
+    __ATTR(io_buff, 0664, example_show, example_store);
 
-struct kobj_attribute muldev_attr_mem = 
-    __ATTR(mem_buff, 0664, muldev_show, muldev_store);
+struct kobj_attribute example_attr_mem =
+    __ATTR(mem_buff, 0664, example_show, example_store);
 
 
 
 /* 
- * The muldev_attr defined above is then grouped in the struct attribute group 
+ * The example_attr defined above is then grouped in the struct attribute group 
  * as follows:
  */
-struct attribute *muldev_attrs[] = {
-    &muldev_attr_io.attr,
-    &muldev_attr_mem.attr,
+struct attribute *example_attrs[] = {
+    &example_attr_io.attr,
+    &example_attr_mem.attr,
     NULL,
 };
 
 
 /* The above attributes are then given to the attribute group as follows: */
-struct attribute_group muldev_attr_group = {
-    .attrs = muldev_attrs,
+struct attribute_group example_attr_group = {
+    .attrs = example_attrs,
 };
 
 
 
-static ssize_t muldev_show(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
                               char *buf)
 {
-    if (attr == &muldev_attr_io) {
+    if (attr == &example_attr_io) {
         return sprintf(buf, "%llu\n", ioData);
     }
 
-    if (attr == &muldev_attr_mem) {
+    if (attr == &example_attr_mem) {
         return sprintf(buf, "%llu\n", memData);
     }
 
     return -EPERM;
 }
 
-static ssize_t muldev_store(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
                               const char *buf, size_t count)
 {
     char num = *buf - '0';
 
-    if (attr == &muldev_attr_io) {
+    if (attr == &example_attr_io) {
 
         /* invalidate the old data and write the new one*/
         ioData = -1;
@@ -104,7 +104,7 @@ static ssize_t muldev_store(struct kobject *kobj, struct kobj_attribute *attr,
         return 2; 
     }
 
-    if (attr == &muldev_attr_mem) {
+    if (attr == &example_attr_mem) {
 
         /* invalidate the old data and write the new one*/
         memData = -1;
@@ -123,7 +123,7 @@ static ssize_t muldev_store(struct kobject *kobj, struct kobj_attribute *attr,
 //                              IRQ functions
 //-----------------------------------------------------------------------------
 
-static irqreturn_t muldev_irq_handler(int irqNum, void *devId)
+static irqreturn_t example_irq_handler(int irqNum, void *devId)
 {
     if (ioread8(irq)) {
 
@@ -148,7 +148,7 @@ static irqreturn_t muldev_irq_handler(int irqNum, void *devId)
 //                             driver functions
 //-----------------------------------------------------------------------------
 
-static int muldev_probe(struct pci_dev *dev, const struct pci_device_id *id)
+static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
     u8 irqNum;
     uint32_t upperBytesAddr, lowerBytesAddr;
@@ -159,7 +159,7 @@ static int muldev_probe(struct pci_dev *dev, const struct pci_device_id *id)
     }
 
     /* map pci BAR addresses to CPU addresses */
-    if (pci_request_regions(dev, "muldev")) {
+    if (pci_request_regions(dev, "example")) {
         pr_alert("failed to map pci BAR addresses to CPU addresses\n");
     }
 
@@ -175,8 +175,8 @@ static int muldev_probe(struct pci_dev *dev, const struct pci_device_id *id)
     }
 
     /* irq registeration */
-    if (devm_request_irq(&dev->dev, irqNum, muldev_irq_handler, IRQF_SHARED, 
-                muldev.name, "")) {
+    if (devm_request_irq(&dev->dev, irqNum, example_irq_handler, IRQF_SHARED,
+                example.name, "")) {
         pr_alert("failed to register irq and its handler\n");
     }
 
@@ -191,20 +191,20 @@ static int muldev_probe(struct pci_dev *dev, const struct pci_device_id *id)
     iowrite32(upperBytesAddr, (void*)((char*)dmaBase + sizeof(uint32_t))); 
 
     /* creates a directory inside /sys/kernel for user, kobj = sysfs_dir */
-    muldevKob = kobject_create_and_add("muldev", kernel_kobj);
-    if (!muldevKob) {
+    exampleKob = kobject_create_and_add("example", kernel_kobj);
+    if (!exampleKob) {
         pr_alert("failed to create a /sys/kernel directory for user\n");
     }
 
     /* create sysfiles for user communication */
-    if (sysfs_create_group(muldevKob, &muldev_attr_group)) {
+    if (sysfs_create_group(exampleKob, &example_attr_group)) {
         pr_alert("failed to create sysfiles in /sys/kernel/dirname for user\n");
     }
 
     return 0;
 }
 
-static void muldev_remove(struct pci_dev *dev)
+static void example_remove(struct pci_dev *dev)
 {
     //FIXME: call with the correct params
     //devm_free_irq(dev);
@@ -218,15 +218,15 @@ static void muldev_remove(struct pci_dev *dev)
     pci_iounmap(dev, dmaBase);
 
     /* remove the directory from sysfs */
-    kobject_del(muldevKob);
+    kobject_del(exampleKob);
 }
 
 /* vendor and device (+ subdevice and subvendor)
  * identifies a device we support
  */
-static struct pci_device_id muldev_ids[] = {
+static struct pci_device_id example_ids[] = {
 
-    { PCI_DEVICE(PCI_VENDOR_ID_REDHAT, PCI_DEVICE_ID_REDHAT_MULDEV) },
+    { PCI_DEVICE(PCI_VENDOR_ID_REDHAT, PCI_DEVICE_ID_REDHAT_EXAMPLE) },
     { 0, },
 };
 
@@ -236,11 +236,11 @@ static struct pci_device_id muldev_ids[] = {
  * remove is called when the driver is unloaded or
  * when the device disappears
  */
-static struct pci_driver muldev = {
-    .name = "muldev",
-    .id_table = muldev_ids,
-    .probe = muldev_probe,
-    .remove = muldev_remove,
+static struct pci_driver example = {
+    .name = "example",
+    .id_table = example_ids,
+    .probe = example_probe,
+    .remove = example_remove,
 };
 
 
@@ -252,11 +252,11 @@ static struct pci_driver muldev = {
 
 
 /* register driver in kernel pci framework */
-module_pci_driver(muldev);
-MODULE_DEVICE_TABLE(pci, muldev_ids);
+module_pci_driver(example);
+MODULE_DEVICE_TABLE(pci, example_ids);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Muldev");
+MODULE_DESCRIPTION("Example");
 MODULE_AUTHOR("Yoni Bettan");
 
 

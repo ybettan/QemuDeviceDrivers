@@ -1,1 +1,1 @@
-obj-m := pci_muldev_driver.o
+obj-m := pci_example_driver.o
