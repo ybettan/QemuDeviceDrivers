@@ -26,3 +26,9 @@ userspace using sysfs.
 5. now you can load and unload the driver
     - load: `sudo insmod <path>/QemuDeviceDrivers/pci/pci_muldev_driver.ko`
     - unload: `sudo rmmod pci_muldev_driver`
+    
+#### Using instructions
+The user can access the driver via sysfs and MMIO is done using DMA.
+  * write: in order to write the number N to the device use `echo N > /sys/kernel/example/io_buff`
+  * read: in order to read the result use `cat /sys/kernel/example/io_buff`
+  * for writing using MMIO and DMA replace `io_buff` with `mem_buff`
