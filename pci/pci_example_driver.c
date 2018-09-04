@@ -4,29 +4,31 @@
 #include <linux/interrupt.h>
 #include <asm/io.h>             /* io map */
 #include <linux/dma-mapping.h>  /* DMA */
+#include <linux/kernel.h>       /* kstrtoint() func */
 
 
 #define PCI_VENDOR_ID_REDHAT 0x1b36
 #define PCI_DEVICE_ID_REDHAT_EXAMPLE 0x0005
 
-#define DMA_BUFFER_SIZE 4096
+#define DMA_BUF_SIZE 4096
+#define BYTE_MAX_SIZE 255
 
 
 /* pointers to handle IO\MEM\IRQ\DMA read\write */ 
-static void __iomem *io, *mem, *irq, *dmaBase;
+static void __iomem *io, *mem, *irq, *dma_base;
 
 /* kobject for sysfs use */
-static struct kobject *exampleKob;
+static struct kobject *example_kobj;
     
 /* implementation is at the buttom */
 static struct pci_driver example;
 
 /* for IRQ support - handler write the result here when IRQ fired */
-uint64_t ioData, memData;
+uint64_t io_data, mem_data;
 
 /* for DMA support */
-void *dmaBuffVirtualAdd;
-dma_addr_t dmaBuffPhysicalAddr;
+void *dma_buf_virtual_addr;
+dma_addr_t dma_buf_physical_addr;
 
 
 //-----------------------------------------------------------------------------
@@ -79,11 +81,11 @@ static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
                               char *buf)
 {
     if (attr == &example_attr_io) {
-        return sprintf(buf, "%llu\n", ioData);
+        return sprintf(buf, "%llu\n", io_data);
     }
 
     if (attr == &example_attr_mem) {
-        return sprintf(buf, "%llu\n", memData);
+        return sprintf(buf, "%llu\n", mem_data);
     }
 
     return -EPERM;
@@ -92,26 +94,39 @@ static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
                               const char *buf, size_t count)
 {
-    char num = *buf - '0';
+    int tmp;
+    char num;
+
+    /* convert buffer to byte */
+    if (kstrtoint(buf, 10, &tmp)) {
+        pr_alert("faild to convert the input into a byte on write\n");
+    }
+    num = tmp;
+
+    /* only number <= 127 are supported (the result should be 1 byte max) */
+    if (num > BYTE_MAX_SIZE/2) {
+        pr_alert("supports only numbers in range [0:127] - 1 byte size");
+        return count;
+    }
 
     if (attr == &example_attr_io) {
 
         /* invalidate the old data and write the new one*/
-        ioData = -1;
+        io_data = 0;
         iowrite8(num, io); 
 
         /* ehco 3 > filename is trying to write 2 chars {'3', ' '} */
-        return 2; 
+        return count;
     }
 
     if (attr == &example_attr_mem) {
 
         /* invalidate the old data and write the new one*/
-        memData = -1;
+        mem_data = 0;
         iowrite8(num, mem); 
 
         /* ehco 3 > filename is trying to write 2 chars {'3', ' '} */
-        return 2; 
+        return count;
     }
 
     return -EPERM;
@@ -123,14 +138,16 @@ static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
 //                              IRQ functions
 //-----------------------------------------------------------------------------
 
-static irqreturn_t example_irq_handler(int irqNum, void *devId)
+static irqreturn_t example_irq_handler(int irq_num, void *dev_id)
 {
     if (ioread8(irq)) {
 
-        /* copy the data from relevant pipes to local variable - will wait
-         * there until the user will read the values from there */
-        ioData = ioread8(io);
-        memData = *(char*)dmaBuffVirtualAdd;
+        /*
+         * copy the data from relevant pipes to local variable - will wait
+         * there until the user will read the values from there
+         */
+        io_data = ioread8(io);
+        mem_data = *(char*)dma_buf_virtual_addr;
 
         /* deassert IRQ */
         iowrite8(0, irq);
@@ -150,8 +167,8 @@ static irqreturn_t example_irq_handler(int irqNum, void *devId)
 
 static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
-    u8 irqNum;
-    uint32_t upperBytesAddr, lowerBytesAddr;
+    u8 irq_num;
+    uint32_t upper_bytes_addr, lower_bytes_addr;
 
     /* enabling the device */
     if (pci_enable_device(dev)) {
@@ -167,37 +184,37 @@ static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
     mem = pci_iomap(dev, 0, 1);
     io = pci_iomap(dev, 1, 1);
     irq = pci_iomap(dev, 2, 1);
-    dmaBase = pci_iomap(dev, 3, 1);
+    dma_base = pci_iomap(dev, 3, 1);
 
     /* get device IRQ number */
-    if(pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irqNum)) {
+    if(pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irq_num)) {
         pr_alert("failed to get IRQ number\n");
     }
 
     /* irq registeration */
-    if (devm_request_irq(&dev->dev, irqNum, example_irq_handler, IRQF_SHARED,
+    if (devm_request_irq(&dev->dev, irq_num, example_irq_handler, IRQF_SHARED,
                 example.name, "")) {
         pr_alert("failed to register irq and its handler\n");
     }
 
     /* setting up coherent DMA mapping */
-    dmaBuffVirtualAdd = dma_alloc_coherent(&dev->dev, DMA_BUFFER_SIZE, 
-            &dmaBuffPhysicalAddr, GFP_KERNEL);
+    dma_buf_virtual_addr = dma_alloc_coherent(&dev->dev, DMA_BUF_SIZE,
+            &dma_buf_physical_addr, GFP_KERNEL);
 
     /* give the device the base address of the DMA-buffer allocated */
-    lowerBytesAddr = dmaBuffPhysicalAddr & 0x00000000ffffffff;
-    upperBytesAddr = dmaBuffPhysicalAddr >> 32;
-    iowrite32(lowerBytesAddr, dmaBase); 
-    iowrite32(upperBytesAddr, (void*)((char*)dmaBase + sizeof(uint32_t))); 
+    lower_bytes_addr = dma_buf_physical_addr & 0x00000000ffffffff;
+    upper_bytes_addr = dma_buf_physical_addr >> 32;
+    iowrite32(lower_bytes_addr, dma_base);
+    iowrite32(upper_bytes_addr, (void*)((char*)dma_base + sizeof(uint32_t)));
 
     /* creates a directory inside /sys/kernel for user, kobj = sysfs_dir */
-    exampleKob = kobject_create_and_add("example", kernel_kobj);
-    if (!exampleKob) {
+    example_kobj = kobject_create_and_add("example", kernel_kobj);
+    if (!example_kobj) {
         pr_alert("failed to create a /sys/kernel directory for user\n");
     }
 
     /* create sysfiles for user communication */
-    if (sysfs_create_group(exampleKob, &example_attr_group)) {
+    if (sysfs_create_group(example_kobj, &example_attr_group)) {
         pr_alert("failed to create sysfiles in /sys/kernel/dirname for user\n");
     }
 
@@ -208,17 +225,17 @@ static void example_remove(struct pci_dev *dev)
 {
     //FIXME: call with the correct params
     //devm_free_irq(dev);
-    dma_free_coherent(&dev->dev, DMA_BUFFER_SIZE, dmaBuffVirtualAdd,
-            dmaBuffPhysicalAddr);
+    dma_free_coherent(&dev->dev, DMA_BUF_SIZE, dma_buf_virtual_addr,
+            dma_buf_physical_addr);
     pci_release_regions(dev);
     pci_disable_device(dev);
     pci_iounmap(dev, io);
     pci_iounmap(dev, mem);
     pci_iounmap(dev, irq);
-    pci_iounmap(dev, dmaBase);
+    pci_iounmap(dev, dma_base);
 
     /* remove the directory from sysfs */
-    kobject_del(exampleKob);
+    kobject_del(example_kobj);
 }
 
 /* vendor and device (+ subdevice and subvendor)
