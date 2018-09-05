@@ -95,7 +95,7 @@ static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
                               const char *buf, size_t count)
 {
     int tmp;
-    char num;
+    uint64_t num;
 
     /* convert buffer to byte */
     if (kstrtoint(buf, 10, &tmp)) {
@@ -147,7 +147,7 @@ static irqreturn_t example_irq_handler(int irq_num, void *dev_id)
          * there until the user will read the values from there
          */
         io_data = ioread8(io);
-        mem_data = *(char*)dma_buf_virtual_addr;
+        mem_data = *(uint64_t*)dma_buf_virtual_addr;
 
         /* deassert IRQ */
         iowrite8(0, irq);
