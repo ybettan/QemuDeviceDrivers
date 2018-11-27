@@ -16,29 +16,31 @@
 
 ///* pointers to handle IO\MEM\IRQ\DMA read\write */
 //static void __iomem *io, *mem, *irq, *dma_base;
-//
-///* kobject for sysfs use */
-//static struct kobject *example_kobj;
-//
+
+/* kobject for sysfs use */
+static struct kobject *example_kobj;
+
 ///* implementation is at the buttom */
 //static struct pci_driver example;
-//
-///* for IRQ support - handler write the result here when IRQ fired */
+
+/* for IRQ support - handler write the result here when IRQ fired */
 //uint64_t io_data, mem_data;
-//
+//uint64_t virtio_data;
+uint8_t data_to_device, data_from_device;
+
 ///* for DMA support */
 //void *dma_buf_virtual_addr;
 //dma_addr_t dma_buf_physical_addr;
 //
-//
-////-----------------------------------------------------------------------------
-////                  sysfs - give user access to driver
-////-----------------------------------------------------------------------------
-//
-//static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
-//                              char *buf);
-//static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
-//                              const char *buf, size_t count);
+
+//-----------------------------------------------------------------------------
+//                  sysfs - give user access to driver
+//-----------------------------------------------------------------------------
+
+static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
+                              char *buf);
+static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
+                              const char *buf, size_t count);
 
 /*
  * define a new attribute (a "file" in sysfs) type when _ATTR is:
@@ -51,63 +53,64 @@
  *     .store= _store, \
  * }
  */
-//struct kobj_attribute example_attr_io =
-//    __ATTR(io_buff, 0664, example_show, example_store);
-//
-//struct kobj_attribute example_attr_mem =
-//    __ATTR(mem_buff, 0664, example_show, example_store);
-//
-//
-//
-///*
-// * The example_attr defined above is then grouped in the struct attribute group
-// * as follows:
-// */
-//struct attribute *example_attrs[] = {
-//    &example_attr_io.attr,
-//    &example_attr_mem.attr,
-//    NULL,
-//};
-//
-//
-///* The above attributes are then given to the attribute group as follows: */
-//struct attribute_group example_attr_group = {
-//    .attrs = example_attrs,
-//};
-//
-//
-//
-//static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
-//                              char *buf)
-//{
-//    if (attr == &example_attr_io) {
-//        return sprintf(buf, "%llu\n", io_data);
-//    }
-//
-//    if (attr == &example_attr_mem) {
-//        return sprintf(buf, "%llu\n", mem_data);
-//    }
-//
-//    return -EPERM;
-//}
-//
-//static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
-//                              const char *buf, size_t count)
-//{
-//    int tmp;
-//    uint64_t num;
-//
-//    /* convert buffer to byte */
-//    if (kstrtoint(buf, 10, &tmp)) {
-//        pr_alert("faild to convert the input into a byte on write\n");
-//    }
-//    num = tmp;
-//
-//    /* only number <= 127 are supported (the result should be 1 byte max) */
-//    if (num > BYTE_MAX_SIZE/2) {
-//        pr_alert("supports only numbers in range [0:127] - 1 byte size");
-//        return count;
-//    }
+struct kobj_attribute example_attr =
+    /* The user can't receive WRITE access in this MACRO */
+    __ATTR(virtio_buf, 0664, example_show, example_store);
+
+
+/*
+ * The example_attr defined above is then grouped in the struct attribute group
+ * as follows:
+ */
+struct attribute *example_attrs[] = {
+    &example_attr.attr,
+    //&example_attr_io.attr,
+    //&example_attr_mem.attr,
+    NULL,
+};
+
+
+/* The above attributes are then given to the attribute group as follows: */
+struct attribute_group example_attr_group = {
+    .attrs = example_attrs,
+};
+
+
+
+static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
+                              char *buf)
+{
+    //if (attr == &example_attr_io) {
+    //    return sprintf(buf, "%llu\n", io_data);
+    //}
+
+    //if (attr == &example_attr_mem) {
+    //    return sprintf(buf, "%llu\n", mem_data);
+    //}
+
+    //return -EPERM;
+    //
+
+    return sprintf(buf, "%u\n", data_from_device);
+}
+
+static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
+                              const char *buf, size_t count)
+{
+    int num;
+
+    /* convert buffer to byte */
+    if (kstrtoint(buf, 10, &num)) {
+        pr_alert("faild to convert the input into a byte on write\n");
+    }
+
+    /* only number <= 254 are supported (the result should be 1 byte max) */
+    if (num > BYTE_MAX_SIZE-1) {
+        pr_alert("supports only numbers in range [0:254] - 1 byte size");
+    }
+
+    data_to_device = num;
+
 //
 //    if (attr == &example_attr_io) {
 //
@@ -130,10 +133,11 @@
 //    }
 //
 //    return -EPERM;
-//}
-//
-//
-//
+        return count;
+}
+
+
+
 ////-----------------------------------------------------------------------------
 ////                              IRQ functions
 ////-----------------------------------------------------------------------------
@@ -213,15 +217,15 @@ static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
     //iowrite32(upper_bytes_addr, (void*)((char*)dma_base + sizeof(uint32_t)));
 
     /* creates a directory inside /sys/kernel for user, kobj = sysfs_dir */
-    //example_kobj = kobject_create_and_add("example", kernel_kobj);
-    //if (!example_kobj) {
-    //    pr_alert("failed to create a /sys/kernel directory for user\n");
-    //}
+    example_kobj = kobject_create_and_add("example", kernel_kobj);
+    if (!example_kobj) {
+        pr_alert("failed to create a /sys/kernel directory for user\n");
+    }
 
-    ///* create sysfiles for user communication */
-    //if (sysfs_create_group(example_kobj, &example_attr_group)) {
-    //    pr_alert("failed to create sysfiles in /sys/kernel/dirname for user\n");
-    //}
+    /* create sysfiles for user communication */
+    if (sysfs_create_group(example_kobj, &example_attr_group)) {
+        pr_alert("failed to create sysfiles in /sys/kernel/dirname for user\n");
+    }
 
     return 0;
 }
@@ -240,8 +244,8 @@ static void example_remove(struct pci_dev *dev)
     //pci_iounmap(dev, irq);
     //pci_iounmap(dev, dma_base);
 
-    ///* remove the directory from sysfs */
-    //kobject_del(example_kobj);
+    /* remove the directory from sysfs */
+    kobject_del(example_kobj);
 }
 
 /* vendor and device (+ subdevice and subvendor)
@@ -260,6 +264,10 @@ static struct pci_device_id example_ids[] = {
  * remove is called when the driver is unloaded or
  * when the device disappears
  */
+//FIXME: update it to 'virtio_driver' instead of 'pci_driver', update also:
+//example_ids
+//example_probe
+//example_remove
 static struct pci_driver example = {
     .name = "example",
     .id_table = example_ids,
