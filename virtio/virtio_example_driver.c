@@ -18,9 +18,6 @@
 ///* pointers to handle IO\MEM\IRQ\DMA read\write */
 //static void __iomem *io, *mem, *irq, *dma_base;
 
-/* kobject for sysfs use */
-//static struct kobject *example_kobj;
-
 ///* implementation is at the buttom */
 //static struct pci_driver example;
 
@@ -40,20 +37,29 @@ struct virtqueue *vq;
 //                  sysfs - give user access to driver
 //-----------------------------------------------------------------------------
 
-//static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
-//                              char *buf);
-//static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
-//                              const char *buf, size_t size);
 static ssize_t
 virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
+	//struct scatterlist sg;
+
+    //sg_init_one(&sg, buf, count);
+
+	///* There should always be room for one buffer. */
+	//virtqueue_add_inbuf(vq, &sg, 1, buf, GFP_KERNEL);
+
+    ///* notify the device */
+	//virtqueue_kick(vq);
+
+    pr_alert("virtio_buf_store()\n");
+
     return count;
 }
 
 static ssize_t
 virtio_buf_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
+    pr_alert("virtio_buf_show()\n");
     return 1;
 }
 
@@ -68,9 +74,6 @@ virtio_buf_show(struct device *dev, struct device_attribute *attr, char *buf)
  *     .store= _store, \
  * }
  */
-//struct kobj_attribute example_attr =
-//    /* The user can't receive WRITE access in this MACRO */
-//    __ATTR(virtio_buf, 0664, example_show, example_store);
 static DEVICE_ATTR_RW(virtio_buf);
 
 
@@ -79,22 +82,12 @@ static DEVICE_ATTR_RW(virtio_buf);
  * as follows:
  */
 struct attribute *example_attrs[] = {
-    //&example_attr.attr,
     &dev_attr_virtio_buf.attr,
-    //&example_attr_io.attr,
-    //&example_attr_mem.attr,
     NULL,
 };
-//
-//
-/////* The above attributes are then given to the attribute group as follows: */
-////struct attribute_group example_attr_group = {
-////    .attrs = example_attrs,
-////};
-//
+
 static const struct attribute_group example_attr_group = {
-    // directory's name
-    .name = "example",
+    .name = "example", /* directory's name */
     .attrs = example_attrs,
 };
 
@@ -180,27 +173,27 @@ static const struct attribute_group example_attr_group = {
 //                              IRQ functions
 //-----------------------------------------------------------------------------
 
-//static void example_irq_handler(struct virtqueue *vq)
-//{
-//    //if (ioread8(irq)) {
-//
-//    //    /*
-//    //     * copy the data from relevant pipes to local variable - will wait
-//    //     * there until the user will read the values from there
-//    //     */
-//    //    io_data = ioread8(io);
-//    //    mem_data = *(uint64_t*)dma_buf_virtual_addr;
-//
-//    //    /* deassert IRQ */
-//    //    iowrite8(0, irq);
-//    //    return IRQ_HANDLED;
-//
-//    //} else {
-//
-//    //    /* if the IRQ port is 0 than another device caused the IRQ */
-//    //    return IRQ_NONE;
-//    //}
-//}
+static void example_irq_handler(struct virtqueue *vq)
+{
+    //if (ioread8(irq)) {
+
+    //    /*
+    //     * copy the data from relevant pipes to local variable - will wait
+    //     * there until the user will read the values from there
+    //     */
+    //    io_data = ioread8(io);
+    //    mem_data = *(uint64_t*)dma_buf_virtual_addr;
+
+    //    /* deassert IRQ */
+    //    iowrite8(0, irq);
+    //    return IRQ_HANDLED;
+
+    //} else {
+
+    //    /* if the IRQ port is 0 than another device caused the IRQ */
+    //    return IRQ_NONE;
+    //}
+}
 
 
 //-----------------------------------------------------------------------------
@@ -209,11 +202,28 @@ static const struct attribute_group example_attr_group = {
 
 
 //static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
-static int example_probe(struct virtio_device *dev)
+static int example_probe(struct virtio_device *vdev)
 {
     //u8 irq_num;
     //uint32_t upper_bytes_addr, lower_bytes_addr;
     int retval;
+
+
+    /* create sysfiles for UI */
+    retval = sysfs_create_group(kernel_kobj, &example_attr_group);
+    if (retval) {
+        pr_alert("failed to create group in /sys/kernel/\n");
+    }
+
+    //FIXME: add error check
+	/* We expect a single virtqueue. */
+    pr_alert("before: vq = %p\n", vq);
+	vq = virtio_find_single_vq(vdev, example_irq_handler, "input");
+    pr_alert("after: vq = %p\n", vq);
+	//if (IS_ERR(vi->vq)) {
+	//	err = PTR_ERR(vi->vq);
+	//	goto err_find;
+	//}
 
 
     /* get device IRQ number */
@@ -237,44 +247,13 @@ static int example_probe(struct virtio_device *dev)
     //iowrite32(lower_bytes_addr, dma_base);
     //iowrite32(upper_bytes_addr, (void*)((char*)dma_base + sizeof(uint32_t)));
 
-
-
-
-    ///* creates a directory inside /sys/kernel for user, kobj = sysfs_dir */
-    //example_kobj = kobject_create_and_add("example", kernel_kobj);
-    //if (!example_kobj) {
-    //    pr_alert("failed to create a /sys/kernel directory for user\n");
-    //}
-
-    ///* create sysfiles for user communication */
-    //if (sysfs_create_group(example_kobj, &example_attr_group)) {
-    //    pr_alert("failed to create sysfiles in /sys/kernel/dirname for user\n");
-    //}
-
-    retval = sysfs_create_group(kernel_kobj, &example_attr_group);
-    //retval = sysfs_create_group(hypervisor_kobj, &example_attr_group);
-    if (retval) {
-        pr_alert("failed to create group\n");
-    }
-
-
-
-    //FIXME: add error check
-	///* We expect a single virtqueue. */
-	//vq = virtio_find_single_vq(dev, example_irq_handler, "input");
-    //pr_alert("vq = %p\n", vq);
-	////if (IS_ERR(vi->vq)) {
-	////	err = PTR_ERR(vi->vq);
-	////	goto err_find;
-	////}
-
     pr_alert("virtio EXAMPLE driver was loaded\n");
 
     return 0;
 }
 
 //static void example_remove(struct pci_dev *dev)
-static void example_remove(struct virtio_device *dev)
+static void example_remove(struct virtio_device *vdev)
 {
     ////FIXME: call with the correct params
     ////devm_free_irq(dev);
@@ -286,7 +265,10 @@ static void example_remove(struct virtio_device *dev)
     sysfs_remove_group(kernel_kobj, &example_attr_group);
 
     /* disable interrupts for vqs */
-    dev->config->reset(dev);
+    vdev->config->reset(vdev);
+
+    /* remove virtqueues */
+	vdev->config->del_vqs(vdev);
 
     pr_alert("virtio EXAMPLE driver was removed\n");
 }
