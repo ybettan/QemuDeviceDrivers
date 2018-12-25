@@ -41,15 +41,15 @@ static ssize_t
 virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
-	//struct scatterlist sg;
+	struct scatterlist sg;
 
-    //sg_init_one(&sg, buf, count);
+    sg_init_one(&sg, buf, count);
 
-	///* There should always be room for one buffer. */
-	//virtqueue_add_inbuf(vq, &sg, 1, buf, GFP_KERNEL);
+	/* There should always be room for one buffer. */
+	virtqueue_add_inbuf(vq, &sg, 1, buf, GFP_KERNEL);
 
-    ///* notify the device */
-	//virtqueue_kick(vq);
+    /* notify the device */
+	virtqueue_kick(vq);
 
     pr_alert("virtio_buf_store()\n");
 
