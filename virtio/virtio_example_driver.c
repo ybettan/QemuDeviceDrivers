@@ -10,28 +10,20 @@
 
 
 #define VIRTIO_ID_EXAMPLE 21
+#define MAX_DATA_SIZE 10
 
-#define DMA_BUF_SIZE 4096
-#define BYTE_MAX_SIZE 255
+//FIXME: remove?
+//#define DMA_BUF_SIZE 4096
+
+struct virtexample_info {
+	struct virtqueue *vq;
+    /* the buffer we send to the device */
+    char out_buf[MAX_DATA_SIZE];
+    /* the buffer we get from the device */
+    char in_buf[MAX_DATA_SIZE];
+};
 
 
-///* pointers to handle IO\MEM\IRQ\DMA read\write */
-//static void __iomem *io, *mem, *irq, *dma_base;
-
-///* implementation is at the buttom */
-//static struct pci_driver example;
-
-/* for IRQ support - handler write the result here when IRQ fired */
-//uint64_t io_data, mem_data;
-//uint64_t virtio_data;
-//uint8_t data_to_device, data_from_device;
-
-///* for DMA support */
-//void *dma_buf_virtual_addr;
-//dma_addr_t dma_buf_physical_addr;
-//
-//FIXME: change to non-global
-struct virtqueue *vq;
 
 //-----------------------------------------------------------------------------
 //                  sysfs - give user access to driver
@@ -41,17 +33,29 @@ static ssize_t
 virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
-	struct scatterlist sg;
+	struct scatterlist sg_in, sg_out;
+    /* cast dev into a virtio_device */
+    struct virtio_device *vdev = dev_to_virtio(dev);
+	struct virtexample_info *vi = vdev->priv;
 
-    sg_init_one(&sg, buf, count);
+    /* copy the user buffer since it is a const buffer */
+    sprintf(vi->out_buf, "%s", buf);
 
-	/* There should always be room for one buffer. */
-	virtqueue_add_inbuf(vq, &sg, 1, buf, GFP_KERNEL);
+    /* initialize a single entry sg lists, one for input and one for output */
+    sg_init_one(&sg_out, vi->out_buf, count);
+    sg_init_one(&sg_in, vi->in_buf, /*sizeof("empty")=*/6);
+
+    //FIXME: sg already have buf, why do we need to send it separetly ? is buf opaque ?
+    //FIXME: use virtqueue_add() instead of both virtqueue_add_outbuf() and
+    //       virtqueue_add_inbuf() ?
+
+	/* add the user buffer to the queue */
+	virtqueue_add_outbuf(vi->vq, &sg_out, 1, vi->out_buf, GFP_KERNEL);
+    /* add an empty buffer for the device to write the result */
+	virtqueue_add_inbuf(vi->vq, &sg_in, 1, vi->in_buf, GFP_KERNEL);
 
     /* notify the device */
-	virtqueue_kick(vq);
-
-    pr_alert("virtio_buf_store()\n");
+	virtqueue_kick(vi->vq);
 
     return count;
 }
@@ -59,19 +63,21 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
 static ssize_t
 virtio_buf_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    pr_alert("virtio_buf_show()\n");
-    return 1;
+    /* cast dev into a virtio_device */
+    struct virtio_device *vdev = dev_to_virtio(dev);
+	struct virtexample_info *vi = vdev->priv;
+
+    return sprintf(buf, "%s\n", vi->in_buf);
 }
 
 /*
- * define a new attribute (a "file" in sysfs) type when _ATTR is:
- * #define __ATTR(_name,_mode,_show,_store) { \
- *     .attr = { \
- *         .name = __stringify(_name), \
- *         .mode = _mode \
- *     }, \
- *     .show = _show, \
- *     .store= _store, \
+ * struct device_attribute dev_attr_virtio_buf = {
+ *     .attr = {
+ *         .name = "virtio_buf",
+ *         .mode = 0644
+ *     },
+ *     .show = virtio_buf_show,
+ *     .store = virtio_buf_store
  * }
  */
 static DEVICE_ATTR_RW(virtio_buf);
@@ -93,106 +99,21 @@ static const struct attribute_group example_attr_group = {
 
 
 
-//static ssize_t example_show(struct kobject *kobj, struct kobj_attribute *attr,
-//                              char *buf)
-//{
-//    //if (attr == &example_attr_io) {
-//    //    return sprintf(buf, "%llu\n", io_data);
-//    //}
-//
-//    //if (attr == &example_attr_mem) {
-//    //    return sprintf(buf, "%llu\n", mem_data);
-//    //}
-//
-//    //return -EPERM;
-//    //
-//
-//    //return sprintf(buf, "%u\n", data_from_device);
-//    return 1;
-//}
-
-//static ssize_t example_store(struct kobject *kobj, struct kobj_attribute *attr,
-//                              const char *buf, size_t size)
-//{
-//    int num;
-//	struct scatterlist sg;
-//
-//    /* convert buffer to byte */
-//    if (kstrtoint(buf, 10, &num)) {
-//        pr_alert("faild to convert the input into a byte on write\n");
-//    }
-//
-//    /* only number <= 254 are supported (the result should be 1 byte max) */
-//    if (num > BYTE_MAX_SIZE-1) {
-//        pr_alert("supports only numbers in range [0:254] - 1 byte size");
-//    }
-//
-//    //data_to_device = num;
-//
-//    pr_alert("num to store is %d\n", num);
-//    //{
-//    //    char *buf2 = kmalloc(5, GFP_KERNEL);
-//	//    sg_init_one(&sg, buf2, size);
-//    //    kfree(buf2);
-//    //}
-//
-//	///* There should always be room for one buffer. */
-//	//virtqueue_add_inbuf(vq, &sg, 1, buf, GFP_KERNEL);
-//
-//    ///* notify the device */
-//	//virtqueue_kick(vq);
-//
-////
-////    if (attr == &example_attr_io) {
-////
-////        /* invalidate the old data and write the new one*/
-////        io_data = 0;
-////        iowrite8(num, io);
-////
-////        /* ehco 3 > filename is trying to write 2 chars {'3', ' '} */
-////        return size;
-////    }
-////
-////    if (attr == &example_attr_mem) {
-////
-////        /* invalidate the old data and write the new one*/
-////        mem_data = 0;
-////        iowrite8(num, mem);
-////
-////        /* ehco 3 > filename is trying to write 2 chars {'3', ' '} */
-////        return size;
-////    }
-////
-////    return -EPERM;
-//        return size;
-//}
-
-
-
 //-----------------------------------------------------------------------------
 //                              IRQ functions
 //-----------------------------------------------------------------------------
 
 static void example_irq_handler(struct virtqueue *vq)
 {
-    //if (ioread8(irq)) {
 
-    //    /*
-    //     * copy the data from relevant pipes to local variable - will wait
-    //     * there until the user will read the values from there
-    //     */
-    //    io_data = ioread8(io);
-    //    mem_data = *(uint64_t*)dma_buf_virtual_addr;
+	struct virtexample_info *vi = vq->vdev->priv;
+    unsigned int len;
+    char *res_buf = NULL;
 
-    //    /* deassert IRQ */
-    //    iowrite8(0, irq);
-    //    return IRQ_HANDLED;
+    /* get the buffer from virtqueue */
+    res_buf = virtqueue_get_buf(vi->vq, &len);
 
-    //} else {
-
-    //    /* if the IRQ port is 0 than another device caused the IRQ */
-    //    return IRQ_NONE;
-    //}
+    sprintf(vi->in_buf, "%s", res_buf);
 }
 
 
@@ -204,38 +125,32 @@ static void example_irq_handler(struct virtqueue *vq)
 //static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
 static int example_probe(struct virtio_device *vdev)
 {
-    //u8 irq_num;
-    //uint32_t upper_bytes_addr, lower_bytes_addr;
     int retval;
-
+    struct virtexample_info *vi = NULL;
 
     /* create sysfiles for UI */
-    retval = sysfs_create_group(kernel_kobj, &example_attr_group);
+    retval = sysfs_create_group(&vdev->dev.kobj, &example_attr_group);
     if (retval) {
-        pr_alert("failed to create group in /sys/kernel/\n");
+        pr_alert("failed to create group in /sys/bus/virtio/devices/.../\n");
     }
 
-    //FIXME: add error check
+    /* initialize driver data */
+	vi = kzalloc(sizeof(struct virtexample_info), GFP_KERNEL);
+	if (!vi)
+		return -ENOMEM;
+
 	/* We expect a single virtqueue. */
-    pr_alert("before: vq = %p\n", vq);
-	vq = virtio_find_single_vq(vdev, example_irq_handler, "input");
-    pr_alert("after: vq = %p\n", vq);
-	//if (IS_ERR(vi->vq)) {
-	//	err = PTR_ERR(vi->vq);
-	//	goto err_find;
-	//}
+	vi->vq = virtio_find_single_vq(vdev, example_irq_handler, "input");
+	if (IS_ERR(vi->vq)) {
+        pr_alert("failed to connect to the device virtqueue\n");
+	}
 
+    /* initialize all buffer to "empty" */
+    sprintf(vi->in_buf, "empty");
+    sprintf(vi->out_buf, "empty");
 
-    /* get device IRQ number */
-    //if(pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irq_num)) {
-    //    pr_alert("failed to get IRQ number\n");
-    //}
-
-    /* irq registeration */
-    //if (devm_request_irq(&dev->dev, irq_num, example_irq_handler, IRQF_SHARED,
-    //            example.name, "")) {
-    //    pr_alert("failed to register irq and its handler\n");
-    //}
+    /* store driver data inside the device to be accessed for all functions */
+    vdev->priv = vi;
 
     /* setting up coherent DMA mapping */
     //dma_buf_virtual_addr = dma_alloc_coherent(&dev->dev, DMA_BUF_SIZE,
@@ -247,22 +162,18 @@ static int example_probe(struct virtio_device *vdev)
     //iowrite32(lower_bytes_addr, dma_base);
     //iowrite32(upper_bytes_addr, (void*)((char*)dma_base + sizeof(uint32_t)));
 
-    pr_alert("virtio EXAMPLE driver was loaded\n");
-
     return 0;
 }
 
-//static void example_remove(struct pci_dev *dev)
 static void example_remove(struct virtio_device *vdev)
 {
-    ////FIXME: call with the correct params
-    ////devm_free_irq(dev);
+	struct virtexample_info *vi = vdev->priv;
+
     //dma_free_coherent(&dev->dev, DMA_BUF_SIZE, dma_buf_virtual_addr,
     //        dma_buf_physical_addr);
 
     /* remove the directory from sysfs */
-    //kobject_del(example_kobj);
-    sysfs_remove_group(kernel_kobj, &example_attr_group);
+    sysfs_remove_group(&vdev->dev.kobj, &example_attr_group);
 
     /* disable interrupts for vqs */
     vdev->config->reset(vdev);
@@ -270,20 +181,13 @@ static void example_remove(struct virtio_device *vdev)
     /* remove virtqueues */
 	vdev->config->del_vqs(vdev);
 
-    pr_alert("virtio EXAMPLE driver was removed\n");
+    /* free memory */
+	kfree(vi);
 }
 
-//static void virtrng_scan(struct virtio_device *vdev)
-//{
-//	struct virtrng_info *vi = vdev->priv;
-//	int err;
-//
-//	err = hwrng_register(&vi->hwrng);
-//	if (!err)
-//		vi->hwrng_register_done = true;
-//}
 
-/* vendor and device (+ subdevice and subvendor)
+/*
+ * vendor and device (+ subdevice and subvendor)
  * identifies a device we support
  */
 static struct virtio_device_id example_ids[] = {
@@ -295,7 +199,8 @@ static struct virtio_device_id example_ids[] = {
     { 0, },
 };
 
-/* id_table describe the device this driver support
+/*
+ * id_table describe the device this driver support
  * probe is called when a device we support exist and
  * when we are chosen to drive it.
  * remove is called when the driver is unloaded or
