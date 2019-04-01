@@ -12,9 +12,6 @@
 #define VIRTIO_ID_EXAMPLE 21
 #define MAX_DATA_SIZE 10
 
-//FIXME: remove?
-//#define DMA_BUF_SIZE 4096
-
 struct virtexample_info {
 	struct virtqueue *vq;
     /* the buffer we send to the device */
@@ -122,7 +119,6 @@ static void example_irq_handler(struct virtqueue *vq)
 //-----------------------------------------------------------------------------
 
 
-//static int example_probe(struct pci_dev *dev, const struct pci_device_id *id)
 static int example_probe(struct virtio_device *vdev)
 {
     int retval;
@@ -152,25 +148,12 @@ static int example_probe(struct virtio_device *vdev)
     /* store driver data inside the device to be accessed for all functions */
     vdev->priv = vi;
 
-    /* setting up coherent DMA mapping */
-    //dma_buf_virtual_addr = dma_alloc_coherent(&dev->dev, DMA_BUF_SIZE,
-    //        &dma_buf_physical_addr, GFP_KERNEL);
-
-    /* give the device the base address of the DMA-buffer allocated */
-    //lower_bytes_addr = dma_buf_physical_addr & 0x00000000ffffffff;
-    //upper_bytes_addr = dma_buf_physical_addr >> 32;
-    //iowrite32(lower_bytes_addr, dma_base);
-    //iowrite32(upper_bytes_addr, (void*)((char*)dma_base + sizeof(uint32_t)));
-
     return 0;
 }
 
 static void example_remove(struct virtio_device *vdev)
 {
 	struct virtexample_info *vi = vdev->priv;
-
-    //dma_free_coherent(&dev->dev, DMA_BUF_SIZE, dma_buf_virtual_addr,
-    //        dma_buf_physical_addr);
 
     /* remove the directory from sysfs */
     sysfs_remove_group(&vdev->dev.kobj, &example_attr_group);
@@ -191,7 +174,6 @@ static void example_remove(struct virtio_device *vdev)
  * identifies a device we support
  */
 static struct virtio_device_id example_ids[] = {
-
     {
         .device = VIRTIO_ID_EXAMPLE,
         .vendor = VIRTIO_DEV_ANY_ID,
