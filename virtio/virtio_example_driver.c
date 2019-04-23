@@ -3,7 +3,7 @@
 #include <linux/device.h>
 #include <linux/pci.h>
 #include <linux/interrupt.h>
-#include <asm/io.h>             /* io map */
+#include <linux/io.h>             /* io map */
 #include <linux/dma-mapping.h>  /* DMA */
 #include <linux/kernel.h>       /* kstrtoint() func */
 #include <linux/virtio_config.h>       /* find_single_vq() func */
@@ -31,6 +31,7 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
 	struct scatterlist sg_in, sg_out;
+	struct scatterlist *request[2];
     /* cast dev into a virtio_device */
     struct virtio_device *vdev = dev_to_virtio(dev);
 	struct virtexample_info *vi = vdev->priv;
@@ -40,16 +41,15 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
 
     /* initialize a single entry sg lists, one for input and one for output */
     sg_init_one(&sg_out, vi->out_buf, count);
-    sg_init_one(&sg_in, vi->in_buf, /*sizeof("empty")=*/6);
+    sg_init_one(&sg_in, vi->in_buf, sizeof("empty"));
 
-    //FIXME: sg already have buf, why do we need to send it separetly ? is buf opaque ?
-    //FIXME: use virtqueue_add() instead of both virtqueue_add_outbuf() and
-    //       virtqueue_add_inbuf() ?
+    /* build the request */
+    request[0] = &sg_out;
+    request[1] = &sg_in;
 
-	/* add the user buffer to the queue */
-	virtqueue_add_outbuf(vi->vq, &sg_out, 1, vi->out_buf, GFP_KERNEL);
-    /* add an empty buffer for the device to write the result */
-	virtqueue_add_inbuf(vi->vq, &sg_in, 1, vi->in_buf, GFP_KERNEL);
+    //FIXME: cange in_buf identifier ?
+	/* add the request to the queue, in_buf is sent as the buffer idetifier */
+    virtqueue_add_sgs(vi->vq, request, 1, 1, vi->in_buf, GFP_KERNEL);
 
     /* notify the device */
 	virtqueue_kick(vi->vq);
