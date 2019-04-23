@@ -3,10 +3,10 @@
 #include <linux/device.h>
 #include <linux/pci.h>
 #include <linux/interrupt.h>
-#include <linux/io.h>             /* io map */
-#include <linux/dma-mapping.h>  /* DMA */
-#include <linux/kernel.h>       /* kstrtoint() func */
-#include <linux/virtio_config.h>       /* find_single_vq() func */
+#include <linux/io.h>               /* io map */
+#include <linux/dma-mapping.h>      /* DMA */
+#include <linux/kernel.h>           /* kstrtoint() func */
+#include <linux/virtio_config.h>    /* find_single_vq() func */
 
 
 #define VIRTIO_ID_EXAMPLE 21
@@ -14,10 +14,11 @@
 
 struct virtexample_info {
 	struct virtqueue *vq;
-    /* the buffer we send to the device */
-    char out_buf[MAX_DATA_SIZE];
-    /* the buffer we get from the device */
-    char in_buf[MAX_DATA_SIZE];
+    /*
+     * in - the data we get from the device
+     * out - the data we send to the device
+     */
+    char in, out;
 };
 
 
@@ -30,6 +31,8 @@ static ssize_t
 virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
+    char tmp_buf[MAX_DATA_SIZE];
+    int tmp_int;
 	struct scatterlist sg_in, sg_out;
 	struct scatterlist *request[2];
     /* cast dev into a virtio_device */
@@ -37,11 +40,17 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
 	struct virtexample_info *vi = vdev->priv;
 
     /* copy the user buffer since it is a const buffer */
-    sprintf(vi->out_buf, "%s", buf);
+    sprintf(tmp_buf, "%s", buf);
+
+    /* convert the data to a single byte value */
+    kstrtoint(tmp_buf, 10, &tmp_int);
+    vi->out = tmp_int;
+    pr_alert("vi->out = %d\n", vi->out);
+    pr_alert("count = %lu\n", count);
 
     /* initialize a single entry sg lists, one for input and one for output */
-    sg_init_one(&sg_out, vi->out_buf, count);
-    sg_init_one(&sg_in, vi->in_buf, sizeof("empty"));
+    sg_init_one(&sg_out, &vi->out, 1);
+    sg_init_one(&sg_in, &vi->in, 1);
 
     /* build the request */
     request[0] = &sg_out;
@@ -49,7 +58,7 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
 
     //FIXME: cange in_buf identifier ?
 	/* add the request to the queue, in_buf is sent as the buffer idetifier */
-    virtqueue_add_sgs(vi->vq, request, 1, 1, vi->in_buf, GFP_KERNEL);
+    virtqueue_add_sgs(vi->vq, request, 1, 1, &vi->in, GFP_KERNEL);
 
     /* notify the device */
 	virtqueue_kick(vi->vq);
@@ -64,7 +73,7 @@ virtio_buf_show(struct device *dev, struct device_attribute *attr, char *buf)
     struct virtio_device *vdev = dev_to_virtio(dev);
 	struct virtexample_info *vi = vdev->priv;
 
-    return sprintf(buf, "%s\n", vi->in_buf);
+    return sprintf(buf, "%d\n", vi->in);
 }
 
 /*
@@ -105,12 +114,14 @@ static void example_irq_handler(struct virtqueue *vq)
 
 	struct virtexample_info *vi = vq->vdev->priv;
     unsigned int len;
-    char *res_buf = NULL;
+    s8 *res = NULL;
 
     /* get the buffer from virtqueue */
-    res_buf = virtqueue_get_buf(vi->vq, &len);
+    res = virtqueue_get_buf(vi->vq, &len);
 
-    sprintf(vi->in_buf, "%s", res_buf);
+    pr_alert("res = %d\n", *res);
+
+    vi->in = *res;
 }
 
 
@@ -141,9 +152,9 @@ static int example_probe(struct virtio_device *vdev)
         pr_alert("failed to connect to the device virtqueue\n");
 	}
 
-    /* initialize all buffer to "empty" */
-    sprintf(vi->in_buf, "empty");
-    sprintf(vi->out_buf, "empty");
+    /* initialize the data to 0 */
+    vi->in = 0;
+    vi->out = 0;
 
     /* store driver data inside the device to be accessed for all functions */
     vdev->priv = vi;
