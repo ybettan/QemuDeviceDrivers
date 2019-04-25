@@ -18,7 +18,7 @@ struct virtexample_info {
      * in - the data we get from the device
      * out - the data we send to the device
      */
-    char in, out;
+    int in, out;
 };
 
 
@@ -32,7 +32,7 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
         const char *buf, size_t count)
 {
     char tmp_buf[MAX_DATA_SIZE];
-    int tmp_int;
+    int retval;
 	struct scatterlist sg_in, sg_out;
 	struct scatterlist *request[2];
     /* cast dev into a virtio_device */
@@ -42,15 +42,15 @@ virtio_buf_store(struct device *dev, struct device_attribute *attr,
     /* copy the user buffer since it is a const buffer */
     sprintf(tmp_buf, "%s", buf);
 
-    /* convert the data to a single byte value */
-    kstrtoint(tmp_buf, 10, &tmp_int);
-    vi->out = tmp_int;
-    pr_alert("vi->out = %d\n", vi->out);
-    pr_alert("count = %lu\n", count);
+    /* convert the data into an integer */
+    retval = kstrtoint(tmp_buf, 10, &vi->out);
+    if (retval) {
+        pr_alert("string converstion failed with error: %d\n", retval);
+    }
 
     /* initialize a single entry sg lists, one for input and one for output */
-    sg_init_one(&sg_out, &vi->out, 1);
-    sg_init_one(&sg_in, &vi->in, 1);
+    sg_init_one(&sg_out, &vi->out, sizeof(int));
+    sg_init_one(&sg_in, &vi->in, sizeof(int));
 
     /* build the request */
     request[0] = &sg_out;
@@ -114,12 +114,10 @@ static void example_irq_handler(struct virtqueue *vq)
 
 	struct virtexample_info *vi = vq->vdev->priv;
     unsigned int len;
-    s8 *res = NULL;
+    int *res = NULL;
 
     /* get the buffer from virtqueue */
     res = virtqueue_get_buf(vi->vq, &len);
-
-    pr_alert("res = %d\n", *res);
 
     vi->in = *res;
 }
