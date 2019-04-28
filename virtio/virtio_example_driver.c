@@ -10,7 +10,8 @@
 
 
 #define VIRTIO_ID_EXAMPLE 21
-#define MAX_DATA_SIZE 10
+/* big enough to contain a string representing an integer */
+#define MAX_DATA_SIZE 20
 
 struct virtexample_info {
 	struct virtqueue *vq;
